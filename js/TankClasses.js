@@ -6,6 +6,7 @@ class BaseTank {
   damageCount;
   damageMax;
   bullets;
+  explosions;
   constructor(scene, x, y, texture, frame) {
     this.scene = scene;
     // assemble  shadow, hull and turret of tank
@@ -94,7 +95,14 @@ class EnemyTank extends BaseTank {
   }
   damage() {
     // increment damageCount
+    this.damageCount++;
     // if count greater than max
+    if(this.isDestroyed()){
+      this.turret.destroy();
+      this.hull.destroy();
+    }else if(this.damageCount == this.damageMax -2){
+      this.burn();
+    }
     // destroy turret and hull
     // else disable and burn tank
   }

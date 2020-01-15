@@ -13,6 +13,10 @@ class TankScene extends Phaser.Scene {
         // load bullet image
         this.load.image('bullet', 'assets/tanks/bullet.png');
         // load explosion spritesheet
+        this.load.spritesheet('kaboom', 'assets/tanks/explosion.png', {
+            frameWidth: 64,
+            frameHeight: 64
+        });
         // load tileset
         this.load.image('tileset', 'assets/tanks/landscape-tileset.png');
         // load tilemap data
@@ -38,30 +42,47 @@ class TankScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, this.map.widthInPixels, this.map.heightInPixels);
         // set physics to map bounds
         // create enemy bullets physics group
-        // create player bullets physics group
         this.enemyBullets = this.physics.add.group({
             defautKey: 'bullet',
             maxSize: 5
         });
-         this.bullets = this.physics.add.group({
+        // create player bullets physics group
+        this.bullets = this.physics.add.group({
             defaultKey: 'bullet',
             maxSize: 5
         });
         // get reference to object layer in tilemap data
+        let objectLayer = this.map.getObjectLayer('objects');
+        let enemyObjects = [];
         // create temporary array for enemy spawn points
         // retrieve custom properties for objects
-        // spawn player
-        this.createPlayer({
-            x: 100,
-            y: 100
-        });
-        // spawn enemies after player
-        this.createEnemy({
-            x: 200,
-            y: 200
-        });
+        objectLayer.objects.forEach(function(object){
+            object = Utils.RetrieveCustomProperties(object);
+            //test for object types
+            if(object.type === "playerSpawn"){
+                this.createPlayer(object);
+            }else if(object.type === 'enemySpawn'){
+                enemyObjects.push(object);
+            }
+        }, this)
+        for(let i = 0; i < enemyObjects.length; i++){
+            this.createEnemy(enemyObjects[i]);
+        }
         // create explosion animation
+        this.anims.create({
+            key: 'explode',
+            frames: this.anims.generateFrameNumbers('kaboom', {
+                start: 0,
+                end: 23,
+                first: 23
+            }),
+            frameRate: 24
+        })
         // create explosions physics group
+        this.explosions = this.physics.add.group({
+            defaultKey: 'kaboom',
+            maxSize: this.enemyTanks.length + 1
+        })
         // listen to pointer down to trigger player shoot
         this.input.on('pointerdown', this.tryShoot, this);
         // camera follow player
@@ -75,8 +96,8 @@ class TankScene extends Phaser.Scene {
         // update player
         this.player.update();
         // update enemies
-        for(let i = 0; i < this.enemyTanks.length; i++){
-            this.enemyTanks[i].update(time,delta);
+        for (let i = 0; i < this.enemyTanks.length; i++) {
+            this.enemyTanks[i].update(time, delta);
         }
     }
     createPlayer(object) {
@@ -100,8 +121,8 @@ class TankScene extends Phaser.Scene {
         // add collider between latest enemy and player
         this.physics.add.collider(enemyTank.hull, this.player.hull);
         // add collider between latest enemy and all other enemies
-        if(this.enemyTanks.length > 1){
-            for(let i = 0; i < this.enemyTanks.length -1; i++){
+        if (this.enemyTanks.length > 1) {
+            for (let i = 0; i < this.enemyTanks.length - 1; i++) {
                 this.physics.add.collider(enemyTank.hull, this.enemyTanks[i].hull);
             }
         }
@@ -131,10 +152,13 @@ class TankScene extends Phaser.Scene {
         // add collider between bullet and destructable layer
         this.physics.add.collider(bullet, this.destructLayer, this.damageWall, null, this);
         // if target is player, check for overlap with player
-        if(target === this.player){
-            this.physics.add.overlap(this.player.hull, bullet,this.bulletHitPlayer,null, this);
-        }else{
-        // else check for overlap with all enemy tanks
+        if (target === this.player) {
+            this.physics.add.overlap(this.player.hull, bullet, this.bulletHitPlayer, null, this);
+        } else {
+            // else check for overlap with all enemy tanks
+            for (let i = 0; i < this.enemyTanks.length; i++) {
+                this.physics.add.overlap(this.enemyTanks[i].hull, bullet, this.bulletHitEnemy, null, this);
+            }
         }
     }
     bulletHitPlayer(hull, bullet) {
@@ -143,10 +167,15 @@ class TankScene extends Phaser.Scene {
         // damage player
         this.player.damage();
         // if player destroyed, end game, play explosion animation
-        if(this.player.isDestroyed()){
+        if (this.player.isDestroyed()) {
             this.input.enabled = false;
             this.enemyTanks = [];
             this.physics.pause();
+            let explosion = this.explosions.get(hull.x, hull.y);
+            if(explosion){
+                this.activateExplosion(explosion);
+                explosion.play('explode');
+            }
         }
     }
     disposeOfBullet(bullet) {
@@ -155,12 +184,32 @@ class TankScene extends Phaser.Scene {
     }
     bulletHitEnemy(hull, bullet) {
         // call disposeOfBullet
+        this.disposeOfBullet(bullet);
         // loop though enemy tanks array and find enemy tank that has been hit
+        let enemy, index;
+        for (let i = 0; i < this.enemyTanks.length; i++) {
+            enemy = this.enemyTanks[i];
+            if (enemy.hull === hull) {
+                index = i;
+                break;
+            }
+        }
         // damage enemy
+        enemy.damage();
+        if(enemy.isDestroyed()){
+            this.enemyTanks.splice(index, 1);
+        }
         // place explosion
+        let explosion = this.explosions.get(hull.x, hull.y);
         // call activateExplosion
+        if(explosion){
+                  // play explosion animation
+            this.activateExplosion(explosion);
+            explosion.on('animationcomplete', this.animComplete, this);
+            explosion.play('explode');
+        }
         // listen for animation complete, call animComplete
-        // play explosion animation
+
         // if enemy is destroyed, remove from enemy tanks array
     }
     damageWall(bullet, tile) {
@@ -182,9 +231,13 @@ class TankScene extends Phaser.Scene {
     }
     animComplete(animation, frame, gameObject) {
         // disable and return the explosion sprite to the explosions pool
+        gameObject.disableBody(true, true, true);
     }
     activateExplosion(explosion) {
         // set z index of explosion above everything else
+        explosion.setDepth(5);
         // activate explosion
+        explosion.setActive(true);
+        explosion.setVisible(true);
     }
 }
