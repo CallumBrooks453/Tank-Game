@@ -28,8 +28,8 @@ class TankScene extends Phaser.Scene {
 
         //Load HP Bars
         this.load.image('outline-big', 'assets/ui/hp-bar-big.png');
-        this.load.image('outline-small', 'assets/ui/hp-bar-small.png');
         this.load.image('bar-big', 'assets/ui/hp-bar2-big.png');
+        this.load.image('outline-small', 'assets/ui/hp-bar-small.png');
         this.load.image('bar-small', 'assets/ui/hp-bar2-small.png');
     }
     create() {
@@ -111,9 +111,9 @@ class TankScene extends Phaser.Scene {
             this.disposeOfBullet(body.gameObject)
         }, this);
 
-        this.uiScene = this.scene.get('UIScene');
+        this.uiScene = this.scene.get("UIScene");
         this.scene.launch(this.uiScene);
-        this.uiScene.createUIElements();
+        this.uiScene.createUIScene();
     }
     update(time, delta) {
         // update player
@@ -200,6 +200,7 @@ class TankScene extends Phaser.Scene {
         this.disposeOfBullet(bullet);
         // damage player
         this.player.damage();
+        this.uiScene.updateHealthBar(this.player);
         // if player destroyed, end game, play explosion animation
         if (this.player.isDestroyed()) {
             this.input.enabled = false;
@@ -282,28 +283,33 @@ class TankScene extends Phaser.Scene {
 
 class UIScene extends Phaser.Scene {
     constructor() {
-        super('UIScene');
+        super('UIScene')
     }
-    createUIElements() {
-        this.scoreText = this.add.text(10, 10, 'Score: 0', {
+
+    createUIScene() {
+        console.log("Hello");
+        this.scoreText = this.add.text(10, 10, "Score: 0", {
             font: '40px Arial',
-            fill: '000000'
+            fill: '#000000'
         });
+
         this.healthBar = {};
-        this.healthBar.outline = this.add.sprite(config.width / 2, config.height - 80, 'outline-big');
-        this.healthBar.bar = this.add.sprite(config.width / 2, config.height - 80, 'bar-big');
-        this.healthBar.mask = this.add.sprite(this.healthBar.bar.x, this.healthBar.bar.y, 'bar-big');
-
+        this.healthBar.outline = this.add.sprite(config.width/2, config.height - 100, 'outline-big');
+        this.healthBar.bar = this.add.sprite(config.width/2, config.height - 100, 'bar-big');
+        this.healthBar.mask = this.add.sprite(this.healthBar.bar.x, this.healthBar.bar.y, "bar-big");
+        
         this.healthBar.mask.visible = false;
+        this.healthBar.mask.offSet = 0;
         this.healthBar.bar.mask = new Phaser.Display.Masks.BitmapMask(this, this.healthBar.mask);
-        this.healthBar.mask.offset = 0;
-    }
-    updateScoreText(score) {
-        this.scoreText.setText('Score:' + score);
+        
     }
 
-    updateHpBar(player) {
-        this.healthBar.mask.offset = this.healthBar.bar.width - (this.healthBar.bar.width * (1 - player.damageCount / player.damageMax));
-        this.healthBar.mask.setPosition(this.healthBar.bar.x - this.healthBar.mask.offset, this.healthBar.bar.y);
+    updateHealthBar(player) {
+        this.healthBar.mask.offSet = this.healthBar.bar.width - (this.healthBar.bar.width * (1-player.damageCount/player.damageMax));
+        this.healthBar.mask.x = this.healthBar.bar.x - this.healthBar.mask.offSet;
+    }
+
+    updateScoreText(score) {
+        this.scoreText.setText("Score: " + score);
     }
 }
