@@ -298,8 +298,8 @@ class UIScene extends Phaser.Scene {
     createUIScene() {
         console.log("Hello");
         this.scoreText = this.add.text(10, 10, "Score: 0", {
-            font: '40px Arial',
-            fill: '#000000'
+            font: '40px Ariel',
+            fill: '#FFFFFF'
         });
 
         this.healthBar = {};
