@@ -6,14 +6,14 @@ class BaseTank {
   damageCount;
   damageMax;
   bullets;
-  explosions;
+  maxSpeed = 100;
   constructor(scene, x, y, texture, frame) {
     this.scene = scene;
     // assemble  shadow, hull and turret of tank
     this.shadow = scene.physics.add.sprite(x, y, texture, 'shadow');
     this.shadow.setDepth(1);
     this.hull = scene.physics.add.sprite(x, y, texture, frame);
-    //  TODO check body size
+    this.hull.body.setSize(this.hull.width - 8, this.hull.height - 8);
     this.hull.body.collideWorldBounds = true;
     this.hull.body.bounce.setTo(1, 1);
     this.hull.setDepth(2);
@@ -23,6 +23,8 @@ class BaseTank {
     // set damageCount and damageMax
     this.damageCount = 0;
     this.damageMax = 2;
+    this.createHealthBar();
+
   }
   update() {
     // make shadow and turret position match hull position
@@ -30,6 +32,8 @@ class BaseTank {
     this.shadow.y = this.turret.y = this.hull.y;
     // make shadow rotation match hull rotation
     this.shadow.rotation = this.hull.rotation;
+
+    this.moveUIChildren();
   }
   damage() {
     // overridden in child 
@@ -57,19 +61,38 @@ class BaseTank {
     // set collision with destructable layer
     this.scene.physics.add.collider(this.hull, destructLayer);
   }
+  createHealthBar() {
+    this.healthBar = {};
+    this.healthBar.outline = this.scene.add.sprite(this.hull.x, this.hull.y + this.hull.height, 'outline-small');
+    this.healthBar.bar = this.scene.add.sprite(this.hull.x, this.hull.y + this.hull.height, 'bar-small');
+    this.healthBar.mask = this.scene.add.sprite(this.hull.x, this.hull.y + this.hull.height, 'bar-small');
+
+    this.healthBar.mask.visible = false;
+    this.healthBar.mask.offSet = 0;
+    this.healthBar.bar.mask = new Phaser.Display.Masks.BitmapMask(this.scene, this.healthBar.mask);
+  }
+
+  moveUIChildren() {
+    this.healthBar.outline.setPosition(this.hull.x, this.hull.y - this.hull.height);
+    this.healthBar.bar.setPosition(this.hull.x, this.hull.y - this.hull.height);
+    this.healthBar.mask.setPosition(this.hull.x - this.healthBar.mask.offSet, this.hull.y - this.hull.height);
+  }
 }
 class EnemyTank extends BaseTank {
   player;
   nextShot;
+  shotInterval = 2000;
   constructor(scene, x, y, texture, frame, player) {
     super(scene, x, y, texture, frame);
     this.player = player;
     // set tanke to random angle
     this.hull.angle = Phaser.Math.RND.angle();
-    // set velocity from rotation
-    this.scene.physics.velocityFromRotation(this.hull.rotation, 100, this.hull.body.velocity);
     // initialise next shot time
     this.nextShot = 0;
+  }
+  initMvt() {
+    // set velocity from rotation
+    this.scene.physics.velocityFromRotation(this.hull.rotation, this.maxSpeed, this.hull.body.velocity);
   }
   update(time, delta) {
     super.update();
@@ -84,7 +107,7 @@ class EnemyTank extends BaseTank {
       if (this.nextShot > time) {
         return
       }
-      this.nextShot = time + 2000;
+      this.nextShot = time + this.shotInterval;
       let bullet = this.bullets.get(this.turret.x, this.turret.y);
       if (bullet) {
         this.scene.fireBullet(bullet, this.turret.rotation, this.player);
@@ -96,15 +119,27 @@ class EnemyTank extends BaseTank {
   damage() {
     // increment damageCount
     this.damageCount++;
+    this.healthBar.mask.offSet = this.healthBar.bar.width - (this.healthBar.bar.width * (1-this.damageCount/this.damageMax))
     // if count greater than max
-    if(this.isDestroyed()){
+    if (this.isDestroyed()) {
+      this.healthBar.outline.destroy();
+      this.healthBar.mask.destroy();
+      this.healthBar.bar.destroy();
       this.turret.destroy();
       this.hull.destroy();
-    }else if(this.damageCount == this.damageMax -2){
+    } else if (this.damageCount == this.damageMax - 1) {
       this.burn();
     }
     // destroy turret and hull
     // else disable and burn tank
+  }
+}
+class BossTank extends EnemyTank {
+  shotInterval = 500;
+  maxSpeed = 50;
+  damageMax = 5;
+  constructor(scene, x, y, texture, frame, player) {
+    super(scene, x, y, texture, frame, player);
   }
 }
 class PlayerTank extends BaseTank {
@@ -128,11 +163,11 @@ class PlayerTank extends BaseTank {
     super.update();
     // modify speed based on keys
     if (this.keys.w.isDown) {
-      if (this.currentSpeed < 100) {
+      if (this.currentSpeed < this.maxSpeed) {
         this.currentSpeed += 10;
       }
     } else if (this.keys.s.isDown) {
-      if (this.currentSpeed > -100) {
+      if (this.currentSpeed > -this.maxSpeed) {
         this.currentSpeed -= 10;
       }
     } else {
@@ -151,6 +186,8 @@ class PlayerTank extends BaseTank {
       } else {
         this.hull.angle--;
       }
+
+
     }
     // modify velocity from rotation
     this.scene.physics.velocityFromRotation(this.hull.rotation, this.currentSpeed, this.hull.body.velocity);
@@ -159,13 +196,21 @@ class PlayerTank extends BaseTank {
     // make turret point towards mouse
     this.turret.rotation = Phaser.Math.Angle.Between(this.turret.x, this.turret.y, worldPoint.x, worldPoint.y);
   }
+  slowTank() {
+    player.maxSpeed = 2;
+  }
   damage() {
     // shake camera
     this.scene.cameras.main.shake(200, 0.005);
     // increment damage count
     this.damageCount++;
+    this.healthBar.mask.offSet = this.healthBar.bar.width - (this.healthBar.bar.width * (1-this.damageCount/this.damageMax))
+
     // if damage count equal or greater to max, burn
     if (this.isDestroyed()) {
+      this.healthBar.outline.destroy();
+      this.healthBar.mask.destroy();
+      this.healthBar.bar.destroy();
       this.burn();
     }
   }

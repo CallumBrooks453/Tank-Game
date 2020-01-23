@@ -6,33 +6,53 @@ class TankScene extends Phaser.Scene {
     bullets;
     enemyBullets;
     explosions;
+    score;
+    onMud = false;
     preload() {
         // load tank atlas 
         this.load.atlas('tank', 'assets/tanks/tanks.png', 'assets/tanks/tanks.json');
         this.load.atlas('enemy', 'assets/tanks/enemy-tanks.png', 'assets/tanks/tanks.json');
+        this.load.atlas('boss', 'assets/tanks/boss-tanks.png', 'assets/tanks/tanks.json');
         // load bullet image
         this.load.image('bullet', 'assets/tanks/bullet.png');
         // load explosion spritesheet
         this.load.spritesheet('kaboom', 'assets/tanks/explosion.png', {
             frameWidth: 64,
             frameHeight: 64
-        });
+        })
         // load tileset
         this.load.image('tileset', 'assets/tanks/landscape-tileset.png');
+        this.load.image('tileset2', 'assets/tanks/landscape-tileset2.png');
+        this.load.image('tileset3', 'assets/tanks/terrainTiles_default.png');
+        this.load.image('tileset4', 'assets/tanks/terrainTiles_default.png');
         // load tilemap data
         this.load.tilemapTiledJSON('tilemap', 'assets/tanks/level1.json');
+
+        //Load HP Bars
+        this.load.image('outline-big', 'assets/ui/hp-bar-big.png');
+        this.load.image('bar-big', 'assets/ui/hp-bar2-big.png');
+        this.load.image('outline-small', 'assets/ui/hp-bar-small.png');
+        this.load.image('bar-small', 'assets/ui/hp-bar2-small.png');
     }
     create() {
+        //score
+        this.score = 0;
         // load in the tilemap
         this.map = this.make.tilemap({
             key: 'tilemap'
         });
         // add tileset image to map
         let landscape = this.map.addTilesetImage('landscape-tileset', 'tileset');
+        let landscape2 = this.map.addTilesetImage('landscape-tileset2', 'tileset2');
+        let landscape3 = this.map.addTilesetImage('terrainTiles_default', 'tileset3');
+        let landscape4 = this.map.addTilesetImage('terrainTiles_default', 'tileset4');
         // create static ground layer 
-        this.map.createStaticLayer('ground', landscape);
+        this.map.createStaticLayer('ground', landscape4);
+        this.mud = this.map.createStaticLayer('Mud', landscape3);
+        this.mud.setCollisionBetween(0, 1000);
+
         // create dynamic destructable layer
-        this.destructLayer = this.map.createDynamicLayer('destructable', landscape, 0, 0);
+        this.destructLayer = this.map.createDynamicLayer('destructable', [landscape, landscape2], 0, 0);
         // set collision by property for destructable layer
         this.destructLayer.setCollisionByProperty({
             collides: true
@@ -43,29 +63,31 @@ class TankScene extends Phaser.Scene {
         // set physics to map bounds
         // create enemy bullets physics group
         this.enemyBullets = this.physics.add.group({
-            defautKey: 'bullet',
+            defaultKey: 'bullet',
             maxSize: 5
-        });
+        })
         // create player bullets physics group
         this.bullets = this.physics.add.group({
             defaultKey: 'bullet',
             maxSize: 5
-        });
+        })
         // get reference to object layer in tilemap data
-        let objectLayer = this.map.getObjectLayer('objects');
+        let objectLayer = this.map.getObjectLayer("objects");
         let enemyObjects = [];
         // create temporary array for enemy spawn points
         // retrieve custom properties for objects
-        objectLayer.objects.forEach(function(object){
+        objectLayer.objects.forEach(function (object) {
             object = Utils.RetrieveCustomProperties(object);
-            //test for object types
-            if(object.type === "playerSpawn"){
+            // test for object types
+            if (object.type === "playerSpawn") {
                 this.createPlayer(object);
-            }else if(object.type === 'enemySpawn'){
+            } else if (object.type === "enemySpawn") {
+                enemyObjects.push(object);
+            } else if (object.type === "bossSpawn") {
                 enemyObjects.push(object);
             }
         }, this)
-        for(let i = 0; i < enemyObjects.length; i++){
+        for (let i = 0; i < enemyObjects.length; i++) {
             this.createEnemy(enemyObjects[i]);
         }
         // create explosion animation
@@ -91,25 +113,45 @@ class TankScene extends Phaser.Scene {
         this.physics.world.on('worldbounds', function (body) {
             this.disposeOfBullet(body.gameObject)
         }, this);
+
+        this.uiScene = this.scene.get("UIScene");
+        this.scene.launch(this.uiScene);
+        this.uiScene.createUIScene();
     }
     update(time, delta) {
         // update player
         this.player.update();
         // update enemies
         for (let i = 0; i < this.enemyTanks.length; i++) {
-            this.enemyTanks[i].update(time, delta);
+            this.enemyTanks[i].update(time, delta)
         }
+        if (this.onMud) {
+            this.player.maxSpeed = 25;
+        } else {
+            this.player.maxSpeed = 100;
+        }
+        this.onMud = false;
     }
     createPlayer(object) {
         this.player = new PlayerTank(this, object.x, object.y, 'tank', 'tank1');
-        // object has x and y props
-        // create player tank
         // enable player collision with destructable layer
         this.player.enableCollision(this.destructLayer);
+        this.physics.add.overlap(this.player.hull, this.mud, this.checkMud, null, this);
+    }
+    checkMud(hull, tile) {
+        if (tile.index > -1) {
+            this.onMud = true;
+        }
     }
     createEnemy(object) {
         // object has x and y props
-        let enemyTank = new EnemyTank(this, object.x, object.y, 'enemy', 'tank1', this.player);
+        let enemyTank;
+        if (object.type == "enemySpawn") {
+            enemyTank = new EnemyTank(this, object.x, object.y, 'enemy', 'tank1', this.player);
+        } else {
+            enemyTank = new BossTank(this, object.x, object.y, 'boss', 'tank1', this.player);
+        }
+        enemyTank.initMvt();
         // create temp ref for enemy tank
         // create enemy tank 
         // enable enemy collision with destructable layer
@@ -132,7 +174,7 @@ class TankScene extends Phaser.Scene {
         let bullet = this.bullets.get(this.player.turret.x, this.player.turret.y);
         // if so, place on player and call fireBullet
         if (bullet) {
-            this.fireBullet(bullet, this.player.turret.rotation, this.enemyTanks)
+            this.fireBullet(bullet, this.player.turret.rotation, this.enemyTanks);
         }
     }
     fireBullet(bullet, rotation, target) {
@@ -160,19 +202,21 @@ class TankScene extends Phaser.Scene {
                 this.physics.add.overlap(this.enemyTanks[i].hull, bullet, this.bulletHitEnemy, null, this);
             }
         }
+
     }
     bulletHitPlayer(hull, bullet) {
         // call disposeOfBullet
         this.disposeOfBullet(bullet);
         // damage player
         this.player.damage();
+        this.uiScene.updateHealthBar(this.player);
         // if player destroyed, end game, play explosion animation
         if (this.player.isDestroyed()) {
             this.input.enabled = false;
             this.enemyTanks = [];
             this.physics.pause();
             let explosion = this.explosions.get(hull.x, hull.y);
-            if(explosion){
+            if (explosion) {
                 this.activateExplosion(explosion);
                 explosion.play('explode');
             }
@@ -183,6 +227,9 @@ class TankScene extends Phaser.Scene {
         bullet.disableBody(true, true);
     }
     bulletHitEnemy(hull, bullet) {
+        //Add to Score
+        this.score++;
+        this.uiScene.updateScoreText(this.score);
         // call disposeOfBullet
         this.disposeOfBullet(bullet);
         // loop though enemy tanks array and find enemy tank that has been hit
@@ -194,23 +241,24 @@ class TankScene extends Phaser.Scene {
                 break;
             }
         }
-        // damage enemy
         enemy.damage();
-        if(enemy.isDestroyed()){
+        if (enemy.isDestroyed()) {
+            // if enemy is destroyed, remove from enemy tanks array
             this.enemyTanks.splice(index, 1);
         }
+        // damage enemy
         // place explosion
         let explosion = this.explosions.get(hull.x, hull.y);
         // call activateExplosion
-        if(explosion){
-                  // play explosion animation
+        if (explosion) {
+            // play explosion animation
             this.activateExplosion(explosion);
             explosion.on('animationcomplete', this.animComplete, this);
             explosion.play('explode');
         }
         // listen for animation complete, call animComplete
 
-        // if enemy is destroyed, remove from enemy tanks array
+
     }
     damageWall(bullet, tile) {
         // call disposeOfBullet
@@ -231,7 +279,7 @@ class TankScene extends Phaser.Scene {
     }
     animComplete(animation, frame, gameObject) {
         // disable and return the explosion sprite to the explosions pool
-        gameObject.disableBody(true, true, true);
+        gameObject.disableBody(true, true);
     }
     activateExplosion(explosion) {
         // set z index of explosion above everything else
@@ -239,5 +287,38 @@ class TankScene extends Phaser.Scene {
         // activate explosion
         explosion.setActive(true);
         explosion.setVisible(true);
+    }
+}
+
+class UIScene extends Phaser.Scene {
+    constructor() {
+        super('UIScene')
+    }
+
+    createUIScene() {
+        console.log("Hello");
+        this.scoreText = this.add.text(10, 10, "Score: 0", {
+            font: '40px Arial',
+            fill: '#000000'
+        });
+
+        this.healthBar = {};
+        this.healthBar.outline = this.add.sprite(config.width / 2, config.height - 100, 'outline-big');
+        this.healthBar.bar = this.add.sprite(config.width / 2, config.height - 100, 'bar-big');
+        this.healthBar.mask = this.add.sprite(this.healthBar.bar.x, this.healthBar.bar.y, "bar-big");
+
+        this.healthBar.mask.visible = false;
+        this.healthBar.mask.offSet = 0;
+        this.healthBar.bar.mask = new Phaser.Display.Masks.BitmapMask(this, this.healthBar.mask);
+
+    }
+
+    updateHealthBar(player) {
+        this.healthBar.mask.offSet = this.healthBar.bar.width - (this.healthBar.bar.width * (1 - player.damageCount / player.damageMax));
+        this.healthBar.mask.x = this.healthBar.bar.x - this.healthBar.mask.offSet;
+    }
+
+    updateScoreText(score) {
+        this.scoreText.setText("Score: " + score);
     }
 }
